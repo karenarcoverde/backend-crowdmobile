@@ -3,6 +3,7 @@ import pandas as pd
 from sqlalchemy import create_engine
 from env_variables import *
 import re
+import math
 
 app = Flask(__name__)
 
@@ -17,6 +18,52 @@ postgres_url, port_db = url_port_db.split(":")
 postgres_port, postgres_database = port_db.split("/")
 
 engine = create_engine(f"postgresql://{postgres_user}:{postgres_pass}@{postgres_url}:{postgres_port}/{postgres_database}")
+
+def is_valid(value):
+    return not (isinstance(value, str) and value == "") and not math.isnan(value)
+
+@app.route('/convert', methods=['POST'])
+def convert_to_geojson():
+    data = request.get_json()
+    
+    geojson = {
+        "type": "FeatureCollection",
+        "features": []
+    }
+    
+    for item in data:
+            if len(item.keys()) != 3:
+                return jsonify({"error": "Only 3 keys for each item"}), 400
+            
+            latitud_key = next((key for key in item if "LAT" in key.upper()), None)
+            longitud_key = next((key for key in item if "LONG" in key.upper()), None)
+
+            if not latitud_key or not longitud_key:
+                return jsonify({"error": "Need to have latitud and longitud for each item"}), 400
+            
+            intensity_key = next((key for key in item if key != latitud_key and key != longitud_key), None)
+            
+            if latitud_key and longitud_key and intensity_key:
+                latitud = item[latitud_key]
+                longitud = item[longitud_key]
+                intensity = item[intensity_key]
+
+                if is_valid(latitud) and is_valid(longitud) and is_valid(intensity):
+                    feature = {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Point",
+                            "coordinates": [longitud, latitud]
+                        },
+                        "properties": {
+                            "intensity": intensity
+                        }
+                    }
+                    geojson['features'].append(feature)
+            else:
+                return jsonify({"error": "Invalid data"}), 400
+        
+    return jsonify(geojson)
 
 @app.route('/execute_sql', methods=['POST'])
 def execute_sql():

@@ -74,8 +74,7 @@ def execute_sql():
     query = data['query']
 
     prohibited_keywords = ['insert', 'update', 'delete', 'drop', 'alter', 'grant', 'revoke', 'execute', 'truncate',
-    'create', 'deny', 'commit', 'rollback', 'savepoint', 'set transaction', 'do', 'call',
-    'explain', 'listen', 'load', 'lock', 'notify', 'prepare', 'reassign', 'reindex', 'release', 'reset']
+    'create', 'commit', 'rollback', 'savepoint','do', 'call', 'lock', 'reindex']
 
     if any(re.match(f"^{keyword}", query.lower()) for keyword in prohibited_keywords):
         return jsonify({'error': 'Prohibited query type'}), 400

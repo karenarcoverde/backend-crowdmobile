@@ -2,6 +2,7 @@ from flask import Flask, jsonify, request
 import pandas as pd
 from sqlalchemy import create_engine
 from env_variables import *
+import re
 
 app = Flask(__name__)
 
@@ -15,7 +16,6 @@ url_port_db, _ = rest.split("?")
 postgres_url, port_db = url_port_db.split(":")
 postgres_port, postgres_database = port_db.split("/")
 
-# Criar a engine
 engine = create_engine(f"postgresql://{postgres_user}:{postgres_pass}@{postgres_url}:{postgres_port}/{postgres_database}")
 
 @app.route('/execute_sql', methods=['POST'])
@@ -26,8 +26,15 @@ def execute_sql():
 
     query = data['query']
 
-    if not query.lower().startswith('select'):
-       return jsonify({'error': 'Only SELECT queries are allowed'}), 400
+    prohibited_keywords = ['insert', 'update', 'delete', 'drop', 'alter', 'grant', 'revoke', 'execute', 'truncate',
+    'create', 'deny', 'commit', 'rollback', 'savepoint', 'set transaction', 'do', 'call',
+    'explain', 'listen', 'load', 'lock', 'notify', 'prepare', 'reassign', 'reindex', 'release', 'reset']
+
+    if any(re.match(f"^{keyword}", query.lower()) for keyword in prohibited_keywords):
+        return jsonify({'error': 'Prohibited query type'}), 400
+    
+    if not query.strip().lower().startswith('select'):
+        return jsonify({'error': 'Only SELECT queries are allowed'}), 400
 
     try:
         df = pd.read_sql(query, engine)

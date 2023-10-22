@@ -22,6 +22,67 @@ engine = create_engine(f"postgresql://{postgres_user}:{postgres_pass}@{postgres_
 def is_valid(value):
     return not (isinstance(value, str) and value == "") and not math.isnan(value)
 
+@app.route('/get_columns_table', methods=['GET'])
+def get_columns_table_names():
+    try:
+        with open('get_columns_table.sql', 'r') as file:
+            query = file.read()
+
+        df = pd.read_sql(query, engine)
+        
+        return jsonify(df.to_dict(orient='records'))
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+    
+@app.route('/get_filters', methods=['GET'])
+def get_filters():
+    try:
+        with open('get_filters.sql', 'r') as file:
+            query = file.read()
+            
+        df = pd.read_sql(query, engine)
+        
+        
+        return jsonify(df.to_dict(orient='records'))
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+    
+@app.route('/generate_heatmap_byfilter', methods=['POST'])
+def generate_heatmap_byfilter():
+    try:
+        data = request.get_json()
+
+        required_parameters = ['start_date', 'end_date', 'TEST_CARRIER_A', 'BRAND', 'DEVICE', 'HARDWARE', 'MODEL', 'column']
+
+        for param in required_parameters:
+            if data.get(param, None) is None:
+                return jsonify({'error': f'Parameter is missing'}), 400
+
+        start_date = data['start_date']
+        end_date = data['end_date']
+        test_carrier_a = data['TEST_CARRIER_A']
+        brand = data['BRAND']
+        device = data['DEVICE']
+        hardware = data['HARDWARE']
+        model = data['MODEL']
+        column = data['column']
+        
+
+        with open('get_heatmap_byfilter.sql', 'r') as file:
+            query = file.read()
+        
+        query = query.format('"' + column + '"')
+        
+        df = pd.read_sql(query, engine)
+    
+        return jsonify({'message': 'ok'})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+
 @app.route('/convert', methods=['POST'])
 def convert_to_geojson():
     data = request.get_json()

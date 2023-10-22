@@ -4,6 +4,8 @@ from sqlalchemy import create_engine
 from env_variables import *
 import re
 import math
+from datetime import datetime
+
 
 app = Flask(__name__)
 
@@ -20,7 +22,32 @@ postgres_port, postgres_database = port_db.split("/")
 engine = create_engine(f"postgresql://{postgres_user}:{postgres_pass}@{postgres_url}:{postgres_port}/{postgres_database}")
 
 def is_valid(value):
-    return not (isinstance(value, str) and value == "") and not math.isnan(value)
+    return pd.notna(value) and value != ""
+
+def convert_to_geojson(df, column):
+    geojson = {
+        "type": "FeatureCollection",
+        "features": []
+    }
+    print(column)
+    df = df[df.apply(lambda row: is_valid(row['CLIENT_LATITUDE']) and 
+                                  is_valid(row['CLIENT_LONGITUDE']) and 
+                                  is_valid(row[column]), axis=1)]
+    
+    for index, row in df.iterrows():
+        feature = {
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [row['CLIENT_LONGITUDE'], row['CLIENT_LATITUDE']]
+            },
+            "properties": {
+                "intensity": row[column]
+            }
+        }
+        geojson['features'].append(feature)
+
+    return jsonify(geojson)
 
 @app.route('/get_columns_table', methods=['GET'])
 def get_columns_table_names():
@@ -68,63 +95,65 @@ def generate_heatmap_byfilter():
         hardware = data['HARDWARE']
         model = data['MODEL']
         column = data['column']
-        
 
         with open('get_heatmap_byfilter.sql', 'r') as file:
             query = file.read()
         
         query = query.format('"' + column + '"')
-        
-        df = pd.read_sql(query, engine)
     
-        return jsonify({'message': 'ok'})
+        df = pd.read_sql(query, engine)
+        df = df.dropna(subset=['CLIENT_LONGITUDE', 'CLIENT_LATITUDE','TEST_DATE', column])
+        if start_date != "" and end_date != "":
+            format = "%Y-%m-%d %H:%M:%S"
+            start_datetime = str(datetime.strptime(start_date, format))
+            end_datetime = str(datetime.strptime(end_date, format))
+            df = df[(df['TEST_DATE'] >= start_datetime) & (df['TEST_DATE'] <= end_datetime)]
+        if test_carrier_a != "":
+            if ',' in test_carrier_a:
+                test_carrier_a = test_carrier_a.strip(',')
+                for index in range(len(test_carrier_a)):
+                    df = df[df['TEST_CARRIER_A'] == test_carrier_a[index]]
+            else:
+                df = df[df['TEST_CARRIER_A'] == test_carrier_a]
+           
+        if brand != "":
+            if ',' in brand:
+                brand = brand.strip(',')
+                for index in range(len(brand)):
+                    df = df[df['BRAND'] == brand[index]]
+            else:
+                df = df[df['BRAND'] == brand]
+          
+        if device != "":
+            if ',' in device:
+                device = device.strip(',')
+                for index in range(len(device)):
+                    df = df[df['DEVICE'] == device[index]]
+            else:
+                df = df[df['DEVICE'] == device]
+            
+        if hardware != "":
+            if ',' in hardware:
+                hardware = hardware.strip(',')
+                for index in range(len(hardware)):
+                    df = df[df['HARDWARE'] == hardware[index]]
+            else:
+                df = df[df['HARDWARE'] == hardware]
+          
+        if model != "":
+            if ',' in model:
+                model = model.strip(',')
+                for index in range(len(model)):
+                    df = df[df['MODEL'] == model[index]]
+            else:
+                df = df[df['MODEL'] == model]
+            
+        df = df.drop(columns=['TEST_DATE','TEST_CARRIER_A','BRAND','DEVICE','HARDWARE','MODEL'])    
+        print(df)
+        convert_to_geojson(df, column)
         
     except Exception as e:
         return jsonify({'error': str(e)}), 400
-
-
-@app.route('/convert', methods=['POST'])
-def convert_to_geojson():
-    data = request.get_json()
-    
-    geojson = {
-        "type": "FeatureCollection",
-        "features": []
-    }
-    
-    for item in data:
-            if len(item.keys()) != 3:
-                return jsonify({"error": "Only 3 keys for each item"}), 400
-            
-            latitud_key = next((key for key in item if "LAT" in key.upper()), None)
-            longitud_key = next((key for key in item if "LONG" in key.upper()), None)
-
-            if not latitud_key or not longitud_key:
-                return jsonify({"error": "Need to have latitud and longitud for each item"}), 400
-            
-            intensity_key = next((key for key in item if key != latitud_key and key != longitud_key), None)
-            
-            if latitud_key and longitud_key and intensity_key:
-                latitud = item[latitud_key]
-                longitud = item[longitud_key]
-                intensity = item[intensity_key]
-
-                if is_valid(latitud) and is_valid(longitud) and is_valid(intensity):
-                    feature = {
-                        "type": "Feature",
-                        "geometry": {
-                            "type": "Point",
-                            "coordinates": [longitud, latitud]
-                        },
-                        "properties": {
-                            "intensity": intensity
-                        }
-                    }
-                    geojson['features'].append(feature)
-            else:
-                return jsonify({"error": "Invalid data"}), 400
-        
-    return jsonify(geojson)
 
 @app.route('/execute_sql', methods=['POST'])
 def execute_sql():
@@ -145,7 +174,7 @@ def execute_sql():
 
     try:
         df = pd.read_sql(query, engine)
-        return jsonify(df.to_dict(orient='records'))
+        print(df)
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 

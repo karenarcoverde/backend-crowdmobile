@@ -3,7 +3,6 @@ import pandas as pd
 from sqlalchemy import create_engine
 from env_variables import *
 import re
-import math
 from datetime import datetime
 
 
@@ -21,33 +20,36 @@ postgres_port, postgres_database = port_db.split("/")
 
 engine = create_engine(f"postgresql://{postgres_user}:{postgres_pass}@{postgres_url}:{postgres_port}/{postgres_database}")
 
-def is_valid(value):
-    return pd.notna(value) and value != ""
-
-def convert_to_geojson(df, column):
+def convert_to_geojson(df, intensity, longitud, latitud):
     geojson = {
         "type": "FeatureCollection",
         "features": []
     }
-    print(column)
-    df = df[df.apply(lambda row: is_valid(row['CLIENT_LATITUDE']) and 
-                                  is_valid(row['CLIENT_LONGITUDE']) and 
-                                  is_valid(row[column]), axis=1)]
     
     for index, row in df.iterrows():
         feature = {
             "type": "Feature",
             "geometry": {
                 "type": "Point",
-                "coordinates": [row['CLIENT_LONGITUDE'], row['CLIENT_LATITUDE']]
+                "coordinates": [row[longitud], row[latitud]]
             },
             "properties": {
-                "intensity": row[column]
+                "intensity": row[intensity]
             }
         }
         geojson['features'].append(feature)
 
     return jsonify(geojson)
+
+def filter_column(df, column_value, column_name):
+    if column_value != "":
+            if ',' in column_value:
+                column_value = column_value.strip(',')
+                for index in range(len(column_value)):
+                    df = df[df[column_name] == column_value[index]]
+            else:
+                df = df[df[column_name] == column_value]
+    return df
 
 @app.route('/get_columns_table', methods=['GET'])
 def get_columns_table_names():
@@ -81,7 +83,7 @@ def generate_heatmap_byfilter():
     try:
         data = request.get_json()
 
-        required_parameters = ['start_date', 'end_date', 'TEST_CARRIER_A', 'BRAND', 'DEVICE', 'HARDWARE', 'MODEL', 'column']
+        required_parameters = ['start_date', 'end_date', 'TEST_CARRIER_A', 'BRAND', 'DEVICE', 'HARDWARE', 'MODEL', 'intensity']
 
         for param in required_parameters:
             if data.get(param, None) is None:
@@ -94,69 +96,37 @@ def generate_heatmap_byfilter():
         device = data['DEVICE']
         hardware = data['HARDWARE']
         model = data['MODEL']
-        column = data['column']
+        intensity = data['intensity']
 
         with open('get_heatmap_byfilter.sql', 'r') as file:
             query = file.read()
         
-        query = query.format('"' + column + '"')
+        query = query.format('"' + intensity + '"')
     
         df = pd.read_sql(query, engine)
-        df = df.dropna(subset=['CLIENT_LONGITUDE', 'CLIENT_LATITUDE','TEST_DATE', column])
+        df = df.dropna(subset=['CLIENT_LONGITUDE', 'CLIENT_LATITUDE','TEST_DATE', intensity])
         if start_date != "" and end_date != "":
             format = "%Y-%m-%d %H:%M:%S"
             start_datetime = str(datetime.strptime(start_date, format))
             end_datetime = str(datetime.strptime(end_date, format))
             df = df[(df['TEST_DATE'] >= start_datetime) & (df['TEST_DATE'] <= end_datetime)]
-        if test_carrier_a != "":
-            if ',' in test_carrier_a:
-                test_carrier_a = test_carrier_a.strip(',')
-                for index in range(len(test_carrier_a)):
-                    df = df[df['TEST_CARRIER_A'] == test_carrier_a[index]]
-            else:
-                df = df[df['TEST_CARRIER_A'] == test_carrier_a]
-           
-        if brand != "":
-            if ',' in brand:
-                brand = brand.strip(',')
-                for index in range(len(brand)):
-                    df = df[df['BRAND'] == brand[index]]
-            else:
-                df = df[df['BRAND'] == brand]
-          
-        if device != "":
-            if ',' in device:
-                device = device.strip(',')
-                for index in range(len(device)):
-                    df = df[df['DEVICE'] == device[index]]
-            else:
-                df = df[df['DEVICE'] == device]
-            
-        if hardware != "":
-            if ',' in hardware:
-                hardware = hardware.strip(',')
-                for index in range(len(hardware)):
-                    df = df[df['HARDWARE'] == hardware[index]]
-            else:
-                df = df[df['HARDWARE'] == hardware]
-          
-        if model != "":
-            if ',' in model:
-                model = model.strip(',')
-                for index in range(len(model)):
-                    df = df[df['MODEL'] == model[index]]
-            else:
-                df = df[df['MODEL'] == model]
+
+        df = filter_column(df, test_carrier_a, 'TEST_CARRIER_A')
+        df = filter_column(df, brand, 'BRAND')
+        df = filter_column(df, device, 'DEVICE')
+        df = filter_column(df, hardware, 'HARDWARE')
+        df = filter_column(df, model, 'MODEL')
             
         df = df.drop(columns=['TEST_DATE','TEST_CARRIER_A','BRAND','DEVICE','HARDWARE','MODEL'])    
-        print(df)
-        convert_to_geojson(df, column)
+        return convert_to_geojson(df, intensity,'CLIENT_LONGITUDE', 'CLIENT_LATITUDE')
         
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
 @app.route('/execute_sql', methods=['POST'])
 def execute_sql():
+    longitud = None
+    latitud = None 
     data = request.get_json()
     if not data or 'query' not in data:
         return jsonify({'error': 'Query not provided'}), 400
@@ -174,7 +144,22 @@ def execute_sql():
 
     try:
         df = pd.read_sql(query, engine)
-        print(df)
+        if df.shape[1] != 3:
+            return jsonify({'error': 'Need to have only 3 columns'}), 400
+        for col_name in df.columns:
+            if 'LONGITUD' in col_name.upper():
+                longitud = col_name
+            if 'LATITUD' in col_name.upper():
+                latitud = col_name
+            
+        if longitud == None or latitud == None:
+            return jsonify({'error': 'Column is missing: Latitud or Longitud'}), 400
+        
+        remaining_columns = [col for col in df.columns if col != longitud and col != latitud]
+        if remaining_columns:
+            intensity = remaining_columns[0]
+        
+        return convert_to_geojson(df, intensity, longitud, latitud)
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 

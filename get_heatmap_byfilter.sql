@@ -1,3 +1,3 @@
 SELECT "CLIENT_LONGITUDE", "CLIENT_LATITUDE", {0}, "TEST_DATE", "TEST_CARRIER_A", "BRAND", "DEVICE", "HARDWARE", "MODEL"
 FROM
-android_extracts
+android_extracts_all

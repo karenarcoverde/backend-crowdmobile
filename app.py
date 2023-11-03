@@ -4,9 +4,13 @@ from sqlalchemy import create_engine
 from env_variables import *
 import re
 from datetime import datetime
+from flask_cors import CORS
+from flask_compress import Compress
 
 
 app = Flask(__name__)
+CORS(app)
+Compress(app)
 
 parts = DATABASE_URL.split("://")
 protocol = parts[0]
@@ -163,5 +167,5 @@ def execute_sql():
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
-if __name__ == "__main__":
-    app.run(debug=False)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', debug=False, port=5000)

@@ -25,6 +25,7 @@ postgres_port, postgres_database = port_db.split("/")
 engine = create_engine(f"postgresql://{postgres_user}:{postgres_pass}@{postgres_url}:{postgres_port}/{postgres_database}")
 
 def convert_to_geojson(df, intensity, longitud, latitud):
+    df = df.dropna(subset=[longitud, latitud, intensity])
     geojson = {
         "type": "FeatureCollection",
         "features": []

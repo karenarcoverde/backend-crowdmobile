@@ -149,8 +149,10 @@ def execute_sql():
 
     try:
         df = pd.read_sql(query, engine)
-        if df.shape[1] != 3:
-            return jsonify({'error': 'Need to have only 3 columns'}), 400
+        if df.shape[1] == 2:
+            df = df.groupby(["CLIENT_LATITUDE", "CLIENT_LONGITUDE"]).size().reset_index(name='intensity')
+        if df.shape[1] != 3 and df.shape[1] != 2:
+            return jsonify({'error': 'Need to have only 3 columns or 2 columns with latitud and longitud'}), 400
         for col_name in df.columns:
             if 'LONGITUD' in col_name.upper():
                 longitud = col_name
@@ -169,4 +171,4 @@ def execute_sql():
         return jsonify({'error': str(e)}), 400
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', debug=False, port=5000)
+    app.run(host='0.0.0.0', debug=True, port=5000)

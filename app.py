@@ -54,6 +54,7 @@ def filter_column(df, column_value, column_name):
                     df = df[df[column_name] == column_value[index]]
             else:
                 df = df[df[column_name] == column_value]
+    
     return df
 
 @app.route('/get_columns_table', methods=['GET'])
@@ -93,7 +94,7 @@ def generate_heatmap_byfilter():
         for param in required_parameters:
             if data.get(param, None) is None:
                 return jsonify({'error': f'Parameter is missing'}), 400
-
+        
         start_date = data['start_date']
         end_date = data['end_date']
         test_carrier_a = data['TEST_CARRIER_A']
@@ -110,8 +111,15 @@ def generate_heatmap_byfilter():
             query = query.format('"' + intensity + '"')  
         else:
             query = query.format('').replace(", ,", ",")
-
+        
         df = pd.read_sql(query, engine)
+
+        df = filter_column(df, test_carrier_a, 'TEST_CARRIER_A')
+        df = filter_column(df, brand, 'BRAND')
+        df = filter_column(df, device, 'DEVICE')
+        df = filter_column(df, hardware, 'HARDWARE')
+        df = filter_column(df, model, 'MODEL')
+       
         if intensity != '':
             df = df.dropna(subset=['CLIENT_LONGITUDE', 'CLIENT_LATITUDE','TEST_DATE', intensity])
         else:
@@ -124,12 +132,6 @@ def generate_heatmap_byfilter():
             start_datetime = str(datetime.strptime(start_date, format))
             end_datetime = str(datetime.strptime(end_date, format))
             df = df[(df['TEST_DATE'] >= start_datetime) & (df['TEST_DATE'] <= end_datetime)]
-        
-        df = filter_column(df, test_carrier_a, 'TEST_CARRIER_A')
-        df = filter_column(df, brand, 'BRAND')
-        df = filter_column(df, device, 'DEVICE')
-        df = filter_column(df, hardware, 'HARDWARE')
-        df = filter_column(df, model, 'MODEL')
         
         columns_to_drop = ['TEST_DATE', 'TEST_CARRIER_A', 'BRAND', 'DEVICE', 'HARDWARE', 'MODEL']
         df = df.drop(columns=[col for col in columns_to_drop if col in df.columns])
@@ -176,7 +178,6 @@ def execute_sql():
         remaining_columns = [col for col in df.columns if col != longitud and col != latitud]
         if remaining_columns:
             intensity = remaining_columns[0]
-        print(intensity)
         
         return convert_to_geojson(df, intensity, longitud, latitud)
     except Exception as e:

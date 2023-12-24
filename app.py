@@ -43,7 +43,7 @@ def convert_to_geojson(df, intensity, longitud, latitud):
             }
         }
         geojson['features'].append(feature)
-
+  
     return jsonify(geojson)
 
 def filter_column(df, column_value, column_name):
@@ -105,24 +105,35 @@ def generate_heatmap_byfilter():
 
         with open('get_heatmap_byfilter.sql', 'r') as file:
             query = file.read()
-        
-        query = query.format('"' + intensity + '"')
-    
+
+        if intensity != '':
+            query = query.format('"' + intensity + '"')  
+        else:
+            query = query.format('').replace(", ,", ",")
+
         df = pd.read_sql(query, engine)
-        df = df.dropna(subset=['CLIENT_LONGITUDE', 'CLIENT_LATITUDE','TEST_DATE', intensity])
+        if intensity != '':
+            df = df.dropna(subset=['CLIENT_LONGITUDE', 'CLIENT_LATITUDE','TEST_DATE', intensity])
+        else:
+            df = df.dropna(subset=['CLIENT_LONGITUDE', 'CLIENT_LATITUDE','TEST_DATE'])
+            df = df.groupby(["CLIENT_LATITUDE", "CLIENT_LONGITUDE"]).size().reset_index(name='intensity')
+            intensity = "intensity"
+            
         if start_date != "" and end_date != "":
             format = "%Y-%m-%d %H:%M:%S"
             start_datetime = str(datetime.strptime(start_date, format))
             end_datetime = str(datetime.strptime(end_date, format))
             df = df[(df['TEST_DATE'] >= start_datetime) & (df['TEST_DATE'] <= end_datetime)]
-
+        
         df = filter_column(df, test_carrier_a, 'TEST_CARRIER_A')
         df = filter_column(df, brand, 'BRAND')
         df = filter_column(df, device, 'DEVICE')
         df = filter_column(df, hardware, 'HARDWARE')
         df = filter_column(df, model, 'MODEL')
-            
-        df = df.drop(columns=['TEST_DATE','TEST_CARRIER_A','BRAND','DEVICE','HARDWARE','MODEL'])    
+        
+        columns_to_drop = ['TEST_DATE', 'TEST_CARRIER_A', 'BRAND', 'DEVICE', 'HARDWARE', 'MODEL']
+        df = df.drop(columns=[col for col in columns_to_drop if col in df.columns])
+        
         return convert_to_geojson(df, intensity,'CLIENT_LONGITUDE', 'CLIENT_LATITUDE')
         
     except Exception as e:
@@ -165,10 +176,11 @@ def execute_sql():
         remaining_columns = [col for col in df.columns if col != longitud and col != latitud]
         if remaining_columns:
             intensity = remaining_columns[0]
+        print(intensity)
         
         return convert_to_geojson(df, intensity, longitud, latitud)
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', debug=False, port=5000)
+    app.run(host='0.0.0.0', debug=True, port=5000)

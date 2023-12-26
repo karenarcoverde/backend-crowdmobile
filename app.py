@@ -113,12 +113,32 @@ def generate_heatmap_byfilter():
             query = query.format('').replace(", ,", ",")
         
         df = pd.read_sql(query, engine)
-
+        
         df = filter_column(df, test_carrier_a, 'TEST_CARRIER_A')
         df = filter_column(df, brand, 'BRAND')
         df = filter_column(df, device, 'DEVICE')
         df = filter_column(df, hardware, 'HARDWARE')
         df = filter_column(df, model, 'MODEL')
+
+        if start_date != "" and end_date != "":
+            output_format = "%Y-%m-%d %H:%M:%S"
+            date_part, time_part = start_date.split('T')
+            if time_part.count(':') == 1:
+                start_date = f"{date_part}T{time_part}:00"
+
+            date_part, time_part = end_date.split('T')
+            if time_part.count(':') == 1:
+                end_date = f"{date_part}T{time_part}:00"
+            
+            start_date = start_date.replace('T', ' ')
+            end_date = end_date.replace('T', ' ')
+
+            start_datetime = datetime.strptime(start_date, output_format)
+            end_datetime = datetime.strptime(end_date, output_format)
+            if start_date != end_date:
+                df = df[(df['TEST_DATE'] >= start_datetime) & (df['TEST_DATE'] <= end_datetime)]
+            else:
+                df = df[df['TEST_DATE'] == start_datetime]
        
         if intensity != '':
             df = df.dropna(subset=['CLIENT_LONGITUDE', 'CLIENT_LATITUDE','TEST_DATE', intensity])
@@ -127,12 +147,6 @@ def generate_heatmap_byfilter():
             df = df.groupby(["CLIENT_LATITUDE", "CLIENT_LONGITUDE"]).size().reset_index(name='intensity')
             intensity = "intensity"
             
-        if start_date != "" and end_date != "":
-            format = "%Y-%m-%d %H:%M:%S"
-            start_datetime = str(datetime.strptime(start_date, format))
-            end_datetime = str(datetime.strptime(end_date, format))
-            df = df[(df['TEST_DATE'] >= start_datetime) & (df['TEST_DATE'] <= end_datetime)]
-        
         columns_to_drop = ['TEST_DATE', 'TEST_CARRIER_A', 'BRAND', 'DEVICE', 'HARDWARE', 'MODEL']
         df = df.drop(columns=[col for col in columns_to_drop if col in df.columns])
         
